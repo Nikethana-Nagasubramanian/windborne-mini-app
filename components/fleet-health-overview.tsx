@@ -30,12 +30,12 @@ const FLEET_STATS = [
 export function FleetHealthOverview() {
   return (
     <Card className="border-border bg-card p-3">
-      <div className="mb-3 border-b border-border pb-2">
+      <div className="border-b border-border pb-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fleet Health</h2>
       </div>
       <div className="space-y-3">
         {FLEET_STATS.map((stat) => (
-          <div key={stat.label} className="flex items-start gap-3">
+          <div key={stat.label} className="flex items-center gap-3">
             <div className="mt-0.5">
               <stat.icon className={`size-4 ${stat.color}`} />
             </div>

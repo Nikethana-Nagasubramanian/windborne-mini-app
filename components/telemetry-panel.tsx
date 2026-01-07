@@ -19,7 +19,12 @@ interface TelemetryPanelProps {
 
 export function TelemetryPanel({ balloon }: TelemetryPanelProps) {
   return (
-    <Card className="border-border bg-card p-3">
+    <Card className="border-border bg-card p-3 relative">
+      <div className="absolute right-3 top-3">
+        <Badge variant="outline" className="font-mono text-[10px] tracking-tighter">
+          {balloon.id}
+        </Badge>
+      </div>
       <div className="mb-3 border-b border-border pb-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live Telemetry</h2>
         <p className="font-mono text-xs text-muted-foreground">{balloon.id}</p>
