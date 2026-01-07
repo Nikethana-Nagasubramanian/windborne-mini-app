@@ -20,83 +20,115 @@ interface VerticalProfileProps {
 }
 
 interface SoundingDataPoint {
-  altitude: number
-  temperature: number
-  pressure: number
-  humidity: number
-  isa_temperature: number // Standard Reference Atmosphere
+  pressure: number // hPa
+  temperature: number // °C
+  isa_temperature: number // °C
+  specific_humidity: number // g/kg
+  wind_speed: number // knots/ms
+  wind_u: number
+  wind_v: number
+  geopotential: number // gpm
 }
 
-// Generate Standard Reference Atmosphere (ISA) temperature
-function generateISATemperature(altitude: number): number {
-  // ISA model: 15°C at sea level, -6.5°C per 1000m up to tropopause (11km)
-  const tropopauseAltitude = 11000
-  if (altitude <= tropopauseAltitude) {
-    return 15 - (altitude / 1000) * 6.5
-  } else {
-    // Above tropopause: constant -56.5°C
+// standard pressure levels from schema
+const PRESSURE_LEVELS = [
+  10, 30, 50, 70, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 925, 950, 975, 1000
+]
+
+// Generate Standard Reference Atmosphere (ISA) temperature based on pressure altitude
+function getISATempByPressure(pressure: number): number {
+  // Rough approximation of ISA based on pressure levels
+  if (pressure >= 226.32) { // Troposphere
+    return 15 - 6.5 * (44.3308 * (1 - Math.pow(pressure / 1013.25, 0.190263)))
+  } else { // Lower Stratosphere
     return -56.5
   }
 }
 
-// Simulated atmospheric sounding data with humidity
-const SOUNDING_DATA: SoundingDataPoint[] = [
-  { altitude: 0, temperature: 15, pressure: 1013, humidity: 85, isa_temperature: 15 },
-  { altitude: 5000, temperature: -5, pressure: 540, humidity: 72, isa_temperature: -17.5 },
-  { altitude: 10000, temperature: -25, pressure: 265, humidity: 58, isa_temperature: -50 },
-  { altitude: 15000, temperature: -45, pressure: 121, humidity: 42, isa_temperature: -82.5 },
-  { altitude: 20000, temperature: -56, pressure: 55, humidity: 28, isa_temperature: -56.5 },
-  { altitude: 25000, temperature: -52, pressure: 25, humidity: 18, isa_temperature: -56.5 },
-  { altitude: 28450, temperature: -48, pressure: 15, humidity: 12, isa_temperature: -56.5 },
-  { altitude: 30000, temperature: -46, pressure: 12, humidity: 10, isa_temperature: -56.5 },
-]
+// Generate geopotential height (rough approximation) from pressure
+function getGeopotentialByPressure(pressure: number): number {
+  return 44330.8 * (1 - Math.pow(pressure / 1013.25, 0.190263))
+}
 
-// Generate ISA data for all altitudes
-const SOUNDING_DATA_WITH_ISA = SOUNDING_DATA.map((point) => {
-  const isa = generateISATemperature(point.altitude)
+// Simulated scientific atmospheric sounding data
+const SOUNDING_DATA: SoundingDataPoint[] = PRESSURE_LEVELS.map(p => {
+  const isa = getISATempByPressure(p)
+  // Add some realistic variation for the "actual" profile
+  const variation = (Math.sin(p / 100) * 5) + (Math.random() * 2 - 1)
+  const temperature = isa + variation
+  
+  // Simulated humidity (decreases with height generally)
+  const specific_humidity = Math.max(0.1, (p / 1000) * 10 * Math.random())
+  
+  // Simulated wind components
+  const wind_u = (Math.random() * 20) + (1000 - p) / 20
+  const wind_v = (Math.random() * 10) - 5
+  const wind_speed = Math.sqrt(wind_u * wind_u + wind_v * wind_v)
+
   return {
-    ...point,
+    pressure: p,
+    temperature,
     isa_temperature: isa,
-    // Range for the shaded area [min, max]
-    temperature_range: [isa, point.temperature],
-    // Deviation for coloring (actual - isa)
-    deviation: point.temperature - isa,
+    specific_humidity,
+    wind_u,
+    wind_v,
+    wind_speed,
+    geopotential: getGeopotentialByPressure(p)
   }
-})
+}).sort((a, b) => b.pressure - a.pressure) // Sort for display (1000 at bottom)
+
+// Generate data for visualization
+const SOUNDING_DATA_FOR_CHART = SOUNDING_DATA.map((point) => ({
+  ...point,
+  // Range for the shaded area [min, max]
+  temperature_range: [point.isa_temperature, point.temperature],
+  // Deviation for coloring (actual - isa)
+  deviation: point.temperature - point.isa_temperature,
+}))
 
 // Custom tooltip component that shows all three variables
 interface CustomTooltipProps {
   active?: boolean
   payload?: any[]
   label?: number
-  altitude?: number
+  pressure?: number
 }
 
-function CustomTooltip({ active, altitude }: CustomTooltipProps) {
-  if (!active || altitude === undefined) {
+function CustomTooltip({ active, pressure }: CustomTooltipProps) {
+  if (!active || pressure === undefined) {
     return null
   }
 
-  // Find the data point closest to the hovered altitude
-  const closestPoint = SOUNDING_DATA_WITH_ISA.reduce((prev, curr) =>
-    Math.abs(curr.altitude - altitude) < Math.abs(prev.altitude - altitude) ? curr : prev
+  // Find the data point closest to the hovered pressure
+  const closestPoint = SOUNDING_DATA_FOR_CHART.reduce((prev, curr) =>
+    Math.abs(curr.pressure - pressure) < Math.abs(prev.pressure - pressure) ? curr : prev
   )
 
   return (
     <div className="rounded-md border border-border bg-card p-3 shadow-lg">
-      <p className="mb-2 font-mono text-xs font-semibold text-foreground">Altitude: {altitude.toLocaleString()} m</p>
+      <p className="mb-2 font-mono text-xs font-semibold text-foreground">Pressure: {closestPoint.pressure} hPa</p>
       <div className="space-y-1 text-xs">
         <div className="flex items-center justify-between gap-4">
           <span className="text-muted-foreground">Temperature:</span>
           <span className="font-mono font-semibold text-foreground">{closestPoint.temperature.toFixed(1)}°C</span>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-muted-foreground">Pressure:</span>
-          <span className="font-mono font-semibold text-foreground">{closestPoint.pressure.toFixed(1)} hPa</span>
+          <span className="text-muted-foreground">ISA Ref:</span>
+          <span className="font-mono font-semibold text-muted-foreground">{closestPoint.isa_temperature.toFixed(1)}°C</span>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-muted-foreground">Humidity:</span>
-          <span className="font-mono font-semibold text-foreground">{closestPoint.humidity.toFixed(1)}%</span>
+          <span className="text-muted-foreground">Signal (Anomaly):</span>
+          <span className={`font-mono font-semibold ${closestPoint.deviation > 0 ? 'text-critical' : 'text-primary'}`}>
+            {(closestPoint.deviation > 0 ? '+' : '')}{closestPoint.deviation.toFixed(1)}°C
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-4 border-t border-border mt-1 pt-1">
+          <span className="text-muted-foreground">Altitude (approx):</span>
+          <span className="font-mono font-semibold text-foreground">{closestPoint.geopotential.toLocaleString()} m</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">Wind:</span>
+          <span className="font-mono font-semibold text-foreground">{closestPoint.wind_speed.toFixed(1)} kn</span>
         </div>
       </div>
     </div>
@@ -104,35 +136,32 @@ function CustomTooltip({ active, altitude }: CustomTooltipProps) {
 }
 
 export function VerticalProfile({ balloonId }: VerticalProfileProps) {
-  const [hoveredAltitude, setHoveredAltitude] = useState<number | null>(null)
+  const [hoveredPressure, setHoveredPressure] = useState<number | null>(null)
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null)
 
   // Handle mouse move over the chart to show tooltip at Y-axis position
   const handleMouseMove = useCallback((e: any) => {
     if (!e || !e.activeCoordinate) return
 
-    // Get the Y coordinate from Recharts
     const y = e.activeCoordinate.y
     const x = e.activeCoordinate.x
 
-    // Recharts Y-axis is inverted (top is higher altitude in our case)
-    // Calculate altitude from Y position using Recharts' coordinate system
-    const chartHeight = 280 - 40 - 30 // total height - top margin - bottom margin
+    // Calculate pressure from Y position
+    const chartHeight = 280 - 40 - 30 
     const topMargin = 10
     const relativeY = y - topMargin
-    const maxAltitude = 35000
+    
+    // Inverted axis: top is 10, bottom is 1000
+    const pressure = 10 + (relativeY / chartHeight) * (1000 - 10)
 
-    // Calculate altitude (Y=0 is at bottom, higher Y is higher altitude)
-    const altitude = (relativeY / chartHeight) * maxAltitude
-
-    if (altitude >= 0 && altitude <= maxAltitude) {
-      setHoveredAltitude(altitude)
+    if (pressure >= 10 && pressure <= 1000) {
+      setHoveredPressure(pressure)
       setMousePosition({ x: x + 20, y: y })
     }
   }, [])
 
   const handleMouseLeave = useCallback(() => {
-    setHoveredAltitude(null)
+    setHoveredPressure(null)
     setMousePosition(null)
   }, [])
 
@@ -144,14 +173,14 @@ export function VerticalProfile({ balloonId }: VerticalProfileProps) {
         </Badge>
       </div>
       <div className="mb-2 border-b border-border pb-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vertical Profile</h2>
-        <p className="font-mono text-xs text-muted-foreground">{balloonId}</p>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Scientific Vertical Profile</h2>
+        <p className="font-mono text-[10px] text-muted-foreground">Pressure-Level Anomaly Shading</p>
       </div>
       <div className="h-[280px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
-            data={SOUNDING_DATA_WITH_ISA}
-            margin={{ top: 10, right: 10, bottom: 30, left: 30 }}
+            data={SOUNDING_DATA_FOR_CHART}
+            margin={{ top: 10, right: 10, bottom: 30, left: 35 }}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
           >
@@ -159,106 +188,91 @@ export function VerticalProfile({ balloonId }: VerticalProfileProps) {
             <XAxis
               type="number"
               dataKey="temperature"
-              domain={[-60, 20]}
-              ticks={[-60, -40, -20, 0, 20]}
+              domain={[-80, 30]}
+              ticks={[-80, -60, -40, -20, 0, 20]}
               stroke="hsl(var(--muted-foreground))"
-              style={{ fontSize: "10px", fontFamily: "var(--font-mono)" }}
+              style={{ fontSize: "9px", fontFamily: "var(--font-mono)" }}
               label={{
-                value: "TEMPERATURE (°C)",
+                value: "TEMP (°C)",
                 position: "insideBottom",
                 offset: -5,
-                style: { fontSize: "11px", fontFamily: "var(--font-mono)", fontWeight: "600" },
+                style: { fontSize: "10px", fontFamily: "var(--font-mono)", fontWeight: "600" },
               }}
             />
             <YAxis
               type="number"
-              dataKey="altitude"
-              domain={[0, 35000]}
-              ticks={[0, 10000, 20000, 30000]}
-              tickFormatter={(value) => `${value / 1000}k`}
+              dataKey="pressure"
+              domain={[10, 1000]}
+              reversed
+              ticks={[10, 100, 250, 500, 700, 850, 1000]}
               stroke="hsl(var(--muted-foreground))"
-              style={{ fontSize: "10px", fontFamily: "var(--font-mono)" }}
+              style={{ fontSize: "9px", fontFamily: "var(--font-mono)" }}
               label={{
-                value: "ALTITUDE (m)",
+                value: "PRESSURE (hPa)",
                 angle: -90,
                 position: "insideLeft",
-                style: { fontSize: "11px", fontFamily: "var(--font-mono)", fontWeight: "600" },
+                offset: -5,
+                style: { fontSize: "10px", fontFamily: "var(--font-mono)", fontWeight: "600" },
               }}
             />
             <Tooltip
-              content={<CustomTooltip altitude={hoveredAltitude ?? undefined} active={hoveredAltitude !== null} />}
+              content={<CustomTooltip pressure={hoveredPressure ?? undefined} active={hoveredPressure !== null} />}
               cursor={false}
-              active={hoveredAltitude !== null}
+              active={hoveredPressure !== null}
               position={mousePosition ? { x: mousePosition.x, y: mousePosition.y } : undefined}
             />
-            {/* Reference line showing hovered altitude */}
-            {hoveredAltitude !== null && (
+            
+            {/* Reference lines for standard pressure levels */}
+            {[250, 500, 850].map((p) => (
               <ReferenceLine
-                y={hoveredAltitude}
-                stroke="hsl(var(--primary))"
-                strokeWidth={1.5}
-                strokeDasharray="3 3"
-                opacity={0.7}
-              />
-            )}
-            {/* Reference lines for altitude markers */}
-            {[10000, 20000, 30000].map((alt) => (
-              <ReferenceLine
-                key={alt}
-                y={alt}
+                key={p}
+                y={p}
                 stroke="hsl(var(--border))"
                 strokeDasharray="2 2"
                 opacity={0.5}
               />
             ))}
             
-            {/* Anomaly shading - Area between ISA and Actual */}
+            {/* Anomaly shading - "The Signal" */}
             <Area
               type="monotone"
               dataKey="temperature_range"
               stroke="none"
               fill="hsl(var(--critical))"
-              fillOpacity={0.15}
+              fillOpacity={0.2}
               connectNulls
             />
 
-            {/* International Standard Atmosphere (ISA) line - dashed light-gray */}
+            {/* ISA Ref line */}
             <Line
               type="monotone"
               dataKey="isa_temperature"
               stroke="#9ca3af"
-              strokeWidth={2}
-              strokeDasharray="5 5"
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
               dot={false}
-              name="International Standard Atmosphere"
+              name="ISA"
             />
-            {/* Actual temperature profile */}
+            
+            {/* Observed Temperature */}
             <Line
               type="monotone"
               dataKey="temperature"
               stroke="hsl(var(--chart-1))"
-              strokeWidth={2.5}
-              dot={false}
-              name="Observed Temperature"
+              strokeWidth={2}
+              dot={{ r: 1 }}
+              name="Observed"
             />
-            {/* Current balloon position marker */}
+
+            {/* Humidity Line - secondary subtle indicator */}
             <Line
               type="monotone"
-              dataKey="temperature"
-              stroke="none"
-              dot={{
-                fill: "hsl(var(--critical))",
-                stroke: "hsl(var(--card))",
-                strokeWidth: 2,
-                r: 5,
-              }}
-              activeDot={{
-                r: 7,
-                fill: "hsl(var(--critical))",
-                stroke: "hsl(var(--card))",
-                strokeWidth: 2,
-              }}
-              data={SOUNDING_DATA_WITH_ISA.filter((d) => d.altitude === 28450)}
+              dataKey="specific_humidity"
+              stroke="hsl(var(--primary))"
+              strokeWidth={1}
+              strokeOpacity={0.4}
+              dot={false}
+              name="Humidity"
             />
           </LineChart>
         </ResponsiveContainer>
